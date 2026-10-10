@@ -54,14 +54,25 @@ Open Vite's URL (normally `http://localhost:5173`). Its `/api` proxy targets Fas
 
 ## Frontend walkthrough
 
-The screenshots below show the main browser states. The happy-path capture shows
-an open sale ready for a user ID and purchase attempt; it is not a post-purchase
-confirmation screen. The unhappy-path capture shows an ended sale with purchase
-disabled.
+The screenshots below show the main browser states: an active sale, a confirmed
+purchase, sold-out inventory, and an ended sale.
+
+After a page refresh, enter the same demo user ID and choose **Already purchased?
+Check order** to restore the existing order reference through
+`GET /api/purchases/me`. The demo ID is entered again rather than persisted in
+browser storage; it is not an authenticated identity.
 
 ### Happy path — sale open and checkout ready
 
 ![Booki Marketplace frontend with an active sale, available stock, and checkout form ready for input](docs/images/frontend-happy-path.png)
+
+### Successful purchase — order confirmed
+
+![Booki Marketplace frontend showing a confirmed purchase and its order ID](docs/images/frontend-purchase-confirmed.png)
+
+### Unhappy path — sold out
+
+![Booki Marketplace frontend showing zero items left and a disabled purchase button](docs/images/frontend-sold-out.png)
 
 ### Unhappy path — sale ended
 

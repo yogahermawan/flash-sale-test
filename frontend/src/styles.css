@@ -57,6 +57,11 @@ input::placeholder { color: #9aa7ba; }
 .buy-button { min-height: 49px; border: 0; border-radius: 10px; background: linear-gradient(100deg, #3479ed, #2461d5); box-shadow: 0 7px 15px #286bd42c; color: #fff; font-size: 13px; font-weight: 800; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
 .buy-button:hover:not(:disabled) { transform: translateY(-1px); background: linear-gradient(100deg, #4386f4, #2c6de4); box-shadow: 0 10px 20px #286bd43b; }
 .buy-button:disabled { cursor: not-allowed; background: #dbe3ef; box-shadow: none; color: #8795a9; }
+.lookup-button { justify-self: center; margin-top: 12px; border: 0; padding: 2px 4px; background: transparent; color: #356fd0; font-size: 11px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.lookup-button:disabled { cursor: wait; color: #93a0b2; }
+.lookup-message { grid-column: 2; margin: -2px 0 0; color: #168c61; font-size: 11px; text-align: center; }
+.lookup-error { grid-column: 2; margin: -2px 0 0; color: #b84654; font-size: 11px; text-align: center; }
+.lookup-error button { margin-left: 5px; border: 0; padding: 0; background: transparent; color: #356fd0; font-size: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
 .outcome { grid-column: 2; margin: -2px 0 0; padding: 16px 18px; border: 1px solid #dfe7f2; border-radius: 12px; background: #f7f9fd; }
 .outcome-pending { display: flex; align-items: center; gap: 14px; border-color: #d9e6fb; background: #f4f8ff; }
 .processing-spinner { flex: 0 0 28px; width: 28px; height: 28px; border: 3px solid #d4e3fb; border-top-color: #3479ed; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -65,6 +70,7 @@ input::placeholder { color: #9aa7ba; }
 .outcome-error { border-color: #f3c8cd; background: #fff5f5; }
 .outcome h2 { margin-bottom: 6px; font-size: 17px; }
 .outcome p:not(.outcome-kicker) { margin-bottom: 9px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.outcome .outcome-order-label { margin: 10px 0 3px; color: #34445f; font-size: 10px; font-weight: 800; }
 .outcome-kicker { margin-bottom: 6px; color: #17875f; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .outcome-error .outcome-kicker { color: #ba4d59; }
 .outcome code { display: block; overflow: hidden; color: #255cae; font-family: 'DM Sans', sans-serif; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -108,5 +114,6 @@ footer span { display: inline-flex; align-items: center; gap: 6px; }
   .checkout-intro h2 { margin-bottom: 6px; font-size: 22px; }
   .checkout-intro > p:not(.eyebrow) { font-size: 12px; }
   .outcome { grid-column: 1; }
+  .lookup-message, .lookup-error { grid-column: 1; }
   footer { flex-wrap: wrap; gap: 9px 15px; font-size: 9px; }
 }

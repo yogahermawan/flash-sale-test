@@ -26,7 +26,6 @@ export function PurchaseOutcome({ pending, result, error, onRetry }: { pending: 
     <p className="outcome-kicker">{isSuccess ? 'Purchase status' : 'Sale status'}</p>
     <h2>{message.title}</h2>
     <p>{message.copy}</p>
-    <label htmlFor="userId">Order ID</label>
-    {'orderId' in result! && <code>{result!.orderId}</code>}
+    {'orderId' in result! && <><p className="outcome-order-label">Order ID</p><code>{result!.orderId}</code></>}
   </section>;
 }
