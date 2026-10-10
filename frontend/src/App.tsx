@@ -41,22 +41,22 @@ export default function App() {
   if (!sale || !status) return null;
 
   return <main className="page">
-    <nav className="topbar" aria-label="Bookipi Flash Drop"><a className="brand" href="/">bookipi<span>／</span>flash drop</a><button className="refresh" type="button" onClick={() => void refresh()} disabled={loading}>Refresh status</button></nav>
-    <div className="hero-line" aria-hidden="true" />
-    <SaleCard sale={sale} status={status} />
+    <nav className="topbar" aria-label="Booki Marketplace"><a className="brand" href="/"><span className="brand-mark">B</span><span className="brand-name">Booki</span><span className="brand-divider" />Marketplace</a><button className="refresh" type="button" onClick={() => void refresh()} disabled={loading}><span aria-hidden="true">↻</span> Refresh stock</button></nav>
+    <div className="page-heading"><span>Limited-time event</span><span className="heading-dot" aria-hidden="true" /> Sale status &amp; stock</div>
+    <SaleCard sale={sale} status={status} now={now} />
     <section className="checkout" aria-labelledby="checkout-title">
-      <div className="checkout-intro"><p className="eyebrow">Secure your item</p><h2 id="checkout-title">Ready when you are.</h2><p>Enter the ID you use for this demo. The server makes the final decision on availability.</p></div>
+      <div className="checkout-intro"><div className="checkout-icon" aria-hidden="true">↗</div><p className="eyebrow">Quick checkout</p><h2 id="checkout-title">Make it yours.</h2><p>Enter your user ID to secure one item. Your order is confirmed as soon as the sale service accepts it.</p></div>
       <form onSubmit={submit} noValidate>
         <label htmlFor="userId">Your user ID</label>
         <input id="userId" name="userId" autoComplete="username" placeholder="you@example.com" value={userId} onChange={(event) => { setUserId(event.target.value); purchase.clearResult(); }} aria-describedby="userId-help" />
-        <p id="userId-help" className="field-help">One item per user. Your ID is checked securely by the sale service.</p>
+        <p id="userId-help" className="field-help">One item per demo user. This ID is not a sign-in or identity verification.</p>
         <button className="buy-button" type="submit" disabled={!canBuy}>
           {purchase.pending ? 'Securing your item…' : status === 'upcoming' ? 'Sale opens soon' : status === 'ended' ? 'Sale ended' : sale.stockRemaining === 0 ? 'Sold out' : 'Buy now'}
         </button>
       </form>
-      <PurchaseOutcome result={purchase.result} error={purchase.error} onRetry={() => void submitPurchase()} />
+      <PurchaseOutcome pending={purchase.pending} result={purchase.result} error={purchase.error} onRetry={() => void submitPurchase()} />
     </section>
     {saleError && <p className="refresh-error" role="status">Status refresh failed: {saleError.message}</p>}
-    <footer><span>Server-authoritative inventory</span><span>One item per user</span><span>Retry-safe checkout</span></footer>
+    <footer><span><i aria-hidden="true">✓</i> Stock refreshes after purchase</span><span><i aria-hidden="true">✓</i> One per demo user</span><span><i aria-hidden="true">✓</i> Retry-safe checkout</span></footer>
   </main>;
 }
