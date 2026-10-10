@@ -1,0 +1,11 @@
+{
+  "name": "bookipi-flash-sale",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "build": "pnpm --filter @bookipi/backend build && pnpm --filter @bookipi/frontend build",
+    "typecheck": "pnpm --filter @bookipi/backend typecheck && pnpm --filter @bookipi/frontend typecheck",
+    "test": "pnpm --filter @bookipi/backend test"
+  },
+  "workspaces": ["backend", "frontend"]
+}
