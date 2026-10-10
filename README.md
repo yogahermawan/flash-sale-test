@@ -1,4 +1,4 @@
-# Bookipi Flash Sale
+# Flash Sale
 
 A small flash-sale assessment focused on correctness: one active product, limited stock, one confirmed item per user, and retry-safe purchase requests.
 
