@@ -134,11 +134,20 @@ pnpm -C backend test
 # Integration and concurrency tests; requires flash_sale_test
 pnpm -C backend test:integration
 
+# Browser development-page tests; requires Docker services and flash_sale_test
+pnpm -C frontend test:e2e
+
 pnpm build
 pnpm typecheck
 ```
 
 Integration tests only run with `TEST_DATABASE_URL` and refuse URLs that do not include `flash_sale_test`. Coverage includes sale-window boundaries, validation, public outcomes, idempotency retries, one-user enforcement, internal-route protection, and concurrent reservations.
+
+The Playwright suite starts isolated Fastify (`:3100`) and Vite (`:5174`) processes against `flash_sale_test`. It verifies the visible development page for an active purchase, order lookup after refresh, sold-out inventory, and ended-sale behavior. It does not use the demo backend at `:3000`.
+
+## Continuous integration
+
+GitHub Actions runs typechecking, production builds, backend tests, and the Chromium Playwright suite on every push and pull request. The workflow creates PostgreSQL and Redis service containers plus a dedicated `flash_sale_test` database.
 
 ## Stress test
 
