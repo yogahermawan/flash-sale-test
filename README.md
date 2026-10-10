@@ -14,17 +14,29 @@ A small flash-sale assessment focused on correctness: one active product, limite
 
 ```mermaid
 flowchart LR
-  C[React demo client] --> E[Local rate protection]
-  E --> A[Fastify API]
-  A --> R[(Redis)]
-  A --> D[(PostgreSQL)]
-  D --> I[Sale row lock and constraints]
+  Client["React demo client"]
 
-  subgraph Production-scale evolution — not implemented locally
-    PA[Stateless API replicas] --> Q[FIFO queue partitioned by product]
-    Q --> W[Reservation worker]
-    W --> PD[(Orders and inventory database)]
+  subgraph Local["Local implementation"]
+    API["Fastify API"]
+    Redis[("Redis 7 rate-limit store")]
+    Postgres[("PostgreSQL 16: sales and orders")]
+    API -->|purchase rate limit| Redis
+    API -->|sale and purchase requests| Postgres
   end
+
+  Client -->|local| API
+  Postgres -->|transaction lock and constraints| Inventory["Inventory correctness"]
+
+  subgraph Production["Production scale evolution: not implemented locally"]
+    Edge["CDN, WAF, edge rate limiting"]
+    Replicas["Stateless API replicas"]
+    Queue["Durable FIFO queue per product"]
+    Worker["Reservation worker"]
+    ProductionDB[("Orders and inventory database")]
+    Edge --> Replicas --> Queue --> Worker --> ProductionDB
+  end
+
+  Client -->|future production path| Edge
 ```
 
 The local service locks the active sale row with `SELECT ... FOR UPDATE`, checks eligibility, inserts the order, decrements stock, and commits in one PostgreSQL transaction. This is correct and intentionally simple locally, but serializes attempts for a hot product. Production evolves to a durable FIFO queue partitioned by product; PostgreSQL constraints remain the final safeguard.
