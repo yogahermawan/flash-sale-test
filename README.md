@@ -52,6 +52,21 @@ pnpm -C frontend dev
 
 Open Vite's URL (normally `http://localhost:5173`). Its `/api` proxy targets Fastify on port `3000`.
 
+## Frontend walkthrough
+
+The screenshots below show the main browser states. The happy-path capture shows
+an open sale ready for a user ID and purchase attempt; it is not a post-purchase
+confirmation screen. The unhappy-path capture shows an ended sale with purchase
+disabled.
+
+### Happy path — sale open and checkout ready
+
+![Booki Marketplace frontend with an active sale, available stock, and checkout form ready for input](docs/images/frontend-happy-path.png)
+
+### Unhappy path — sale ended
+
+![Booki Marketplace frontend showing an ended sale and disabled purchase button](docs/images/frontend-unhappy-path.png)
+
 ## Start a demo sale
 
 No active sale exists after migration by design. Open `http://localhost:3000/docs`, authorize `InternalApiKey` with the raw `INTERNAL_API_KEY` value from `.env`, then run `POST /api/internal/sales/reset` with an active window.
@@ -104,20 +119,39 @@ Integration tests only run with `TEST_DATABASE_URL` and refuse URLs that do not 
 
 ## Stress test
 
-Start a dedicated local backend with a higher temporary rate limit (keep the
-normal development default for manual testing):
+The stress runner resets the active sale and deletes its existing orders through
+the internal reset endpoint. Use a dedicated test/demo database and a dedicated
+backend process. Raise the backend's rate limit temporarily so this scenario
+measures inventory contention instead of intentional `429` load shedding; keep
+the normal development default for manual testing:
 
 ```sh
-RATE_LIMIT_MAX=10000 pnpm -C backend dev
+RATE_LIMIT_MAX=120000 RATE_LIMIT_WINDOW_MS=60000 pnpm -C backend dev
 ```
 
-Then, in another terminal:
+Then, in another terminal, run the recorded 100,000-request scenario:
 
 ```sh
-STRESS_REQUESTS=1000 STRESS_CONCURRENCY=50 STRESS_STOCK=100 pnpm -C backend stress
+STRESS_REQUESTS=100000 STRESS_CONCURRENCY=50 STRESS_STOCK=100 pnpm -C backend stress
 ```
 
 The script resets an active sale through the protected internal endpoint, then reports outcome counts, elapsed time, request rate, p50/p95/p99 latency, and invariant metrics. It passes only with no unexpected transport/non-2xx errors, no oversell, unique confirmed users, non-negative stock, and conserved inventory. This is local correctness/load verification, not a production capacity claim.
+
+### Recorded local run
+
+| Requests | Concurrency | Initial stock | Confirmed | Sold out | Other errors | Elapsed | Throughput | Latency p50 / p95 / p99 | Invariants | Result |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| 100,000 | 50 | 100 | 100 | 99,900 | 0 | 257.4 s | 388.5 req/s | 113.6 / 210.6 / 300.9 ms | All true | PASS |
+
+The backend admitted the full workload without `429` responses. The database
+confirmed exactly the 100 available items; all other admitted attempts returned
+`sold_out`. Metrics reported `stockRemaining: 0`, `confirmedOrderCount: 100`,
+`duplicateUserCount: 0`, and `stockNonNegative`, `noOversell`,
+`uniqueConfirmedUsers`, and `stockConserved` all true. These measurements apply
+to this local environment and configuration only; they are not a production
+capacity claim. A separate run with a lower rate limit may return expected
+`429` responses and should be reported as load-shedding behavior, not as this
+inventory stress scenario's passing result.
 
 ## Scope boundaries
 
