@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
     "test": "vitest run",
+    "test:integration": "vitest run test/integration test/concurrency",
+    "stress": "tsx scripts/stress.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -17,7 +17,7 @@ declare module 'fastify' {
 export interface BuildAppDependencies { config: AppConfig; db: Pool; redis?: Redis }
 
 export async function buildApp({ config, db, redis }: BuildAppDependencies): Promise<FastifyInstance> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: config.nodeEnv !== 'test' });
   app.decorate('db', db);
   app.decorate('config', config);
   await app.register(swagger, {

@@ -43,10 +43,10 @@ export async function registerInternalRoutes(app: FastifyInstance): Promise<void
       body: {
         type: 'object', additionalProperties: false, required: ['initialStock', 'startsAt', 'endsAt'],
         properties: {
-          initialStock: { type: 'integer', minimum: 0, default: 100 },
-          startsAt: { type: 'string', format: 'date-time', default: '2026-10-10T00:00:00.000Z' },
-          endsAt: { type: 'string', format: 'date-time', default: '2026-10-11T00:00:00.000Z' },
-          productName: { type: 'string', minLength: 1, maxLength: 200, default: 'Limited Edition Bookipi Headphones' },
+          initialStock: { type: 'integer', minimum: 0, description: 'Example: 100.' },
+          startsAt: { type: 'string', format: 'date-time', description: 'Example: 2026-10-10T00:00:00.000Z.' },
+          endsAt: { type: 'string', format: 'date-time', description: 'Example: 2026-10-11T00:00:00.000Z.' },
+          productName: { type: 'string', minLength: 1, maxLength: 200, description: 'Example: Limited Edition Bookipi Headphones.' },
         },
       },
       response: { 200: saleSchema, 400: errorSchema, 404: errorSchema },
@@ -70,7 +70,7 @@ export async function registerInternalRoutes(app: FastifyInstance): Promise<void
       summary: 'Inspect stock/order invariants',
       security: [{ InternalApiKey: [] }],
       headers: internalKeyHeaderSchema,
-      response: { 200: { type: 'object' }, 404: errorSchema, 503: errorSchema },
+      response: { 200: { type: 'object', additionalProperties: true }, 404: errorSchema, 503: errorSchema },
     },
   }, async () => getMetrics(app.db));
 }

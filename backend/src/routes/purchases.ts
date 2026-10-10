@@ -18,11 +18,11 @@ export async function registerPurchaseRoutes(app: FastifyInstance): Promise<void
       description: 'Use a new UUID Idempotency-Key for a new logical attempt. Reuse the same key only to retry an uncertain network/server failure.',
       body: {
         type: 'object', additionalProperties: false, required: ['userId'],
-        properties: { userId: { ...userIdSchema, description: 'Assessment user identity; production would derive this from authentication.', default: 'yoga@example.com' } },
+        properties: { userId: { ...userIdSchema, description: 'Assessment user identity; production would derive this from authentication. Example: yoga@example.com.' } },
       },
       headers: {
         type: 'object', required: ['idempotency-key'],
-        properties: { 'idempotency-key': { type: 'string', format: 'uuid', description: 'UUID used to safely retry this logical purchase attempt.', default: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' } },
+        properties: { 'idempotency-key': { type: 'string', format: 'uuid', description: 'UUID used to safely retry this logical purchase attempt. Example: f47ac10b-58cc-4372-a567-0e02b2c3d479.' } },
       },
       response: { 200: purchaseResponse, 400: errorSchema, 409: errorSchema, 429: errorSchema, 500: errorSchema, 503: errorSchema },
     },
@@ -32,7 +32,7 @@ export async function registerPurchaseRoutes(app: FastifyInstance): Promise<void
     schema: {
       tags: ['Purchases'],
       summary: 'Check whether a user secured an item',
-      querystring: { type: 'object', additionalProperties: false, required: ['userId'], properties: { userId: { ...userIdSchema, default: 'yoga@example.com' } } },
+      querystring: { type: 'object', additionalProperties: false, required: ['userId'], properties: { userId: { ...userIdSchema, description: 'Example: yoga@example.com.' } } },
       response: {
         200: { oneOf: [
           { type: 'object', additionalProperties: false, required: ['purchased', 'orderId'], properties: { purchased: { const: true }, orderId: { type: 'string', format: 'uuid' } } },

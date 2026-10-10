@@ -1,0 +1,12 @@
+flowchart LR
+  C[React demo client] --> E[Local rate protection]
+  E --> A[Fastify API]
+  A --> R[(Redis)]
+  A --> D[(PostgreSQL)]
+  D --> I[Sale row lock and constraints]
+
+  subgraph Production-scale evolution — not implemented locally
+    PA[Stateless API replicas] --> Q[FIFO queue partitioned by product]
+    Q --> W[Reservation worker]
+    W --> PD[(Orders and inventory database)]
+  end
