@@ -1,49 +1,48 @@
-# Flash Sale
+# Flash Sale - asynchronous FIFO purchases with WebSocket results
 
-A small flash-sale assessment focused on correctness: one active product, limited stock, one confirmed item per user, and retry-safe purchase requests.
-
-## Stack
-
-- React + Vite + TypeScript demo client
-- Fastify + TypeScript API
-- PostgreSQL 16 for transactional inventory correctness
-- Redis 7 for purchase-route rate limiting
-- Docker Compose for local PostgreSQL and Redis
+A React + Fastify + TypeScript assessment for one product, limited stock, a
+configurable sale window, and one confirmed item per demo user. Purchase
+admission is separate from order confirmation: the API returns **202 Processing**,
+a durable worker processes FIFO attempts, and the browser receives final status
+through WebSocket.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  Client["React demo client"]
-
-  subgraph Local["Local implementation"]
-    API["Fastify API"]
-    Redis[("Redis 7 rate-limit store")]
-    Postgres[("PostgreSQL 16: sales and orders")]
-    API -->|purchase rate limit| Redis
-    API -->|sale and purchase requests| Postgres
-  end
-
-  Client -->|local| API
-  Postgres -->|transaction lock and constraints| Inventory["Inventory correctness"]
-
-  subgraph Production["Production scale evolution: not implemented locally"]
-    Edge["CDN, WAF, edge rate limiting"]
-    Replicas["Stateless API replicas"]
-    Queue["Durable FIFO queue per product"]
-    Worker["Reservation worker"]
-    ProductionDB[("Orders and inventory database")]
-    Edge --> Replicas --> Queue --> Worker --> ProductionDB
-  end
-
-  Client -->|future production path| Edge
+flowchart TD
+  Client[React client] -->|status / purchase| API[Fastify Purchase API]
+  API -->|rate limit| Redis[(Redis)]
+  API -->|202 + attemptId, durable admission| Queue[(PostgreSQL FIFO attempts)]
+  Queue --> Worker[Inventory + Order Worker]
+  Worker -->|one atomic transaction| Tables[(PostgreSQL inventory + orders)]
+  Worker --> Events[(Durable order status events)]
+  Events -->|post-commit NOTIFY| WS[API WebSocket subscriptions]
+  WS -->|snapshot + final status| Client
+  Edge[Production: CDN / WAF / gateway / verified auth] -.-> API
 ```
 
-The local service locks the active sale row with `SELECT ... FOR UPDATE`, checks eligibility, inserts the order, decrements stock, and commits in one PostgreSQL transaction. This is correct and intentionally simple locally, but serializes attempts for a hot product. Production evolves to a durable FIFO queue partitioned by product; PostgreSQL constraints remain the final safeguard.
+The queue is a durable local PostgreSQL substitute for a FIFO broker, permitted by
+this assignment. API admission briefly locks the sale row so sequence allocation
+and commit define acceptance order. A PostgreSQL advisory transaction lock
+allows only one logical worker for this single product across processes. The
+worker selects pending attempts in sequence order and commits a conditional
+stock decrement, order insert, attempt result and status event together.
 
-## Local setup
+**Orders DB and Inventory DB are logical tables in the same physical database.**
+Splitting them across physical services would require a reservation/saga and
+reconciliation design, not an ordinary transaction. Queueing controls execution
+and recovery; it does not remove the hot-product throughput bottleneck.
 
-Prerequisites: Node.js 20+, pnpm 11.18.0 (as pinned in package.json), and Docker Compose (or Colima on macOS).
+The local web client, API, Redis rate limiter, FIFO queue, worker, persistence,
+events and WebSocket path are implemented. CDN/WAF, a managed gateway and real
+identity verification are production deployment concerns, not provisioned here.
+Vite supplies the local HTTP/WebSocket proxy; userId remains demo identity.
+See [checkpoint coverage](docs/ASYNC-CHECKPOINTS.md).
+
+## Setup
+
+Prerequisites: Node.js 20+, pnpm 11.18.0 and Docker Compose. Use `docker-compose`
+instead of `docker compose` if your installation uses the standalone command.
 
 ```sh
 pnpm install
@@ -52,200 +51,147 @@ docker compose up -d
 docker compose exec postgres createdb -U flash_sale flash_sale_test
 pnpm -C backend migrate
 pnpm -C backend dev
-```
-
-The backend automatically loads root `.env`, so Fish, Zsh, and Bash need no shell-specific export commands. PostgreSQL is published at host port `5433`; Redis uses `6379`.
-
-In another terminal:
-
-```sh
 pnpm -C frontend dev
 ```
 
-Open Vite's URL (normally `http://localhost:5173`). Its `/api` proxy targets Fastify on port `3000`.
+Run frontend/backend in separate terminals. Match root `.env` URLs to the host
+ports published by Compose. Current Compose ports: PostgreSQL 5432, Redis 16379.
+No sale is created by migration. In Scalar at `http://localhost:3000/docs`,
+authorize InternalApiKey using your local key and reset a demo sale. Use ISO 8601
+start/end values that include the current time. Reset deletes all previous sale,
+attempt, event and order data; use a dedicated demo/test database.
 
-## Frontend walkthrough
+The API embeds a worker by default for easy local setup. To demonstrate separate
+processes, run the API with `RUN_WORKER=false pnpm -C backend dev` and in another
+terminal run `pnpm -C backend worker` using the same DATABASE_URL. Accepted work
+remains pending while the worker is stopped and resumes when it restarts.
 
-The screenshots below show the main browser states: an active sale, a confirmed
-purchase, sold-out inventory, and an ended sale.
+## API and completion contract
 
-After a page refresh, enter the same demo user ID and choose **Already purchased?
-Check order** to restore the existing order reference through
-`GET /api/purchases/me`. The demo ID is entered again rather than persisted in
-browser storage; it is not an authenticated identity.
-
-### Happy path — sale open and checkout ready
-
-![Booki Marketplace frontend with an active sale, available stock, and checkout form ready for input](docs/images/frontend-happy-path.png)
-
-### Successful purchase — order confirmed
-
-![Booki Marketplace frontend showing a confirmed purchase and its order ID](docs/images/frontend-purchase-confirmed.png)
-
-### Unhappy path — sold out
-
-![Booki Marketplace frontend showing zero items left and a disabled purchase button](docs/images/frontend-sold-out.png)
-
-### Unhappy path — sale ended
-
-![Booki Marketplace frontend showing an ended sale and disabled purchase button](docs/images/frontend-unhappy-path.png)
-
-## Start a demo sale
-
-No active sale exists after migration by design. Open `http://localhost:3000/docs`, authorize `InternalApiKey` with the raw `INTERNAL_API_KEY` value from `.env`, then run `POST /api/internal/sales/reset` with an active window.
-
-```json
-{
-  "initialStock": 100,
-  "startsAt": "2026-10-13T00:00:00.000Z",
-  "endsAt": "2026-10-14T23:59:59.000Z",
-  "productName": "Limited Edition Bookipi Headphones"
-}
-```
-
-Adjust the example window to include the current time.
-
-Internal endpoints are absent in production and intentionally return `404` when their key is missing or incorrect in development.
-
-## API
-
-| Method | Endpoint | Purpose |
+| Method | Endpoint | Behaviour |
 | --- | --- | --- |
-| `GET` | `/api/sale` | Public sale state, window, and remaining stock. |
-| `POST` | `/api/purchases` | Attempts one purchase; requires `Idempotency-Key: <uuid>`. |
-| `GET` | `/api/purchases/me?userId=...` | Looks up the active-sale purchase for a user. |
-| `POST` | `/api/internal/sales/reset` | Development/test-only repeatable reset. |
-| `GET` | `/api/internal/metrics` | Development/test-only inventory invariants. |
+| GET | /api/sale | Status, window, stock and authoritative server time |
+| POST | /api/purchases | UUID Idempotency-Key + userId; eligible attempt returns 202 Processing + attemptId |
+| GET | /api/purchases/:attemptId | Persisted status; demo userId query required |
+| WS | /api/purchases/:attemptId/events?userId=... | Initial snapshot and subsequent final status |
+| GET | /api/purchases/me?userId=... | Confirmed order lookup or pending attemptId |
+| POST | /api/internal/sales/reset | Protected development/test reset |
+| GET | /api/internal/metrics | Consistent snapshot of inventory and queue invariants |
 
-```http
-POST /api/purchases
-Idempotency-Key: f47ac10b-58cc-4372-a567-0e02b2c3d479
-Content-Type: application/json
+Example admission body: `{ "userId": "yoga@example.com" }`, with an
+`Idempotency-Key` UUID header. A 202 response is `{ "outcome": "processing",
+"attemptId": "..." }`; it does **not** reserve an item or confirm an order.
+WebSocket statuses are processing, confirmed, already_purchased, sold_out or
+failed. Successful statuses include orderId. Outside-window admission returns
+upcoming or ended immediately without creating queued work.
 
-{ "userId": "yoga@example.com" }
-```
+The server checks eligibility against fresh database time after taking the
+admission lock and stores that time. **Admission-time semantics:** work accepted
+before the deadline may complete after it. FIFO refers to committed queue
+acceptance, not the exact order users clicked Buy.
 
-Valid purchase outcomes are `confirmed`, `already_purchased`, `upcoming`, `ended`, and `sold_out`. The same key and user returns the original confirmed order without another decrement. Reusing a key for a different user returns `409 IDEMPOTENCY_KEY_REUSED`.
+Same sale/user/key always returns the original attempt, including terminal
+results via its subscription. Reusing a key for a different user returns 409.
+Different keys for the same user may queue separately, but only one can create an
+order; subsequent attempts return already_purchased. PostgreSQL unique
+constraints remain the final safeguard.
+
+## Recovery and failure handling
+
+Pending attempts survive API/worker restart. Worker failure before commit rolls
+back stock, order and completion together. A committed terminal attempt is not
+processed twice. Failed transactions retry after one second; after three
+processing failures the attempt becomes failed (local dead-letter state), a final
+event is recorded, and later work can proceed. Failed attempts are inspectable in
+the database; automatic redrive is not implemented.
+
+LISTEN/NOTIFY is a wake-up signal, not a durable broker. Results/events are durable
+rows; registration precedes snapshot reads and reconnect replays persisted state.
+The notification listener also reconnects and refreshes subscribers after loss.
+The browser reconnects with backoff; after 30 seconds it stops waiting and offers
+a retry to resume the same attempt. Timeout does not cancel a purchase. Lookup
+can restore a pending attempt after refresh. Heartbeats clean up dead sockets.
+
+The pending backlog is capped at 10,000; full admission returns 503. DB waits are
+bounded: acquisition/lock 2s, statement 5s, idle transaction 10s. Selected transient
+DB errors return 503. Redis fail-open is configurable; neither Redis nor sockets
+decide inventory. Production still needs verified auth, allowed-origin policy,
+operational socket limits, monitoring and appropriate admission capacity.
 
 ## Tests
 
 ```sh
-# Unit tests; no database required
 pnpm -C backend test
-
-# Integration and concurrency tests; requires flash_sale_test
 pnpm -C backend test:integration
-
-# Browser development-page tests; requires Docker services and flash_sale_test
 pnpm -C frontend test:e2e
-
-pnpm build
 pnpm typecheck
+pnpm build
 ```
 
-Integration tests load root `.env` and fail if `TEST_DATABASE_URL` is missing; the unit command runs only unit tests. Integration tests run with `TEST_DATABASE_URL` and refuse URLs that do not include `flash_sale_test`. Coverage includes sale-window boundaries, validation, public outcomes, idempotency retries, one-user enforcement, internal-route protection, and concurrent reservations.
+Unit tests need no database. Integration requires a dedicated database name
+containing flash_sale_test and loads root .env; missing configuration fails.
+Integration creates tables from migrations and resets test data. Browser tests
+use E2E_DATABASE_URL or TEST_DATABASE_URL, isolated API :3100 and Vite :5174.
+Do not run integration and browser suites concurrently against the same database.
+CI runs these checks with PostgreSQL/Redis containers and Chromium.
 
-The Playwright suite loads root `.env`, using `E2E_DATABASE_URL` when set or otherwise `TEST_DATABASE_URL`. It requires a dedicated `flash_sale_test` database and uses `REDIS_URL` from the same configuration.
+Coverage includes FIFO winners, competing workers, concurrent duplicate keys and
+users, admission windows, completion after deadline, rollback before commit,
+restart recovery, dead-letter progression, WebSocket notifications and reconnect
+snapshot replay. Browser tests assert 202 admission and a WebSocket connection
+before checking final confirmation.
 
-The Playwright suite starts isolated Fastify (`:3100`) and Vite (`:5174`) processes against `flash_sale_test`. It verifies the visible development page for an active purchase, order lookup after refresh, sold-out inventory, and ended-sale behavior. It does not use the demo backend at `:3000`.
+## Async stress tests
 
-## Continuous integration
-
-GitHub Actions runs typechecking, production builds, backend tests, and the Chromium Playwright suite on every push and pull request. The workflow creates PostgreSQL and Redis service containers plus a dedicated `flash_sale_test` database.
-
-## Stress test
-
-The stress runner resets the active sale and deletes its existing orders through
-the internal reset endpoint. Use a dedicated test/demo database and a dedicated
-backend process. Raise the backend's rate limit temporarily so this scenario
-measures inventory contention instead of intentional `429` load shedding; keep
-the normal development default for manual testing:
+Use a dedicated backend/database and raise its rate limit so the workload tests
+inventory rather than intentional 429 rejection. Replace DATABASE_URL below with
+the actual dedicated test database URL and correct host port. Never use an empty
+shell expansion from a variable that exists only in .env.
 
 ```sh
-RATE_LIMIT_MAX=120000 RATE_LIMIT_WINDOW_MS=60000 pnpm -C backend dev
+DATABASE_URL=postgres://flash_sale:flash_sale@localhost:5432/flash_sale_test \
+RATE_LIMIT_MAX=120000 pnpm -C backend dev
 ```
 
-Then, in another terminal, run the recorded 100,000-request scenario:
+In a separate terminal:
 
 ```sh
-STRESS_REQUESTS=100000 STRESS_CONCURRENCY=50 STRESS_STOCK=100 pnpm -C backend stress
-```
-
-The script resets an active sale through the protected internal endpoint, then reports outcome counts, elapsed time, request rate, p50/p95/p99 latency, and invariant metrics. It passes only with no unexpected transport/non-2xx errors, no oversell, unique confirmed users, non-negative stock, and conserved inventory. This is local correctness/load verification, not a production capacity claim.
-
-### Recorded local run
-
-| Requests | Concurrency | Initial stock | Confirmed | Sold out | Other errors | Elapsed | Throughput | Latency p50 / p95 / p99 | Invariants | Result |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| 100,000 | 50 | 100 | 100 | 99,900 | 0 | 257.4 s | 388.5 req/s | 113.6 / 210.6 / 300.9 ms | All true | PASS |
-
-The backend admitted the full workload without `429` responses. The database
-confirmed exactly the 100 available items; all other admitted attempts returned
-`sold_out`. Metrics reported `stockRemaining: 0`, `confirmedOrderCount: 100`,
-`duplicateUserCount: 0`, and `stockNonNegative`, `noOversell`,
-`uniqueConfirmedUsers`, and `stockConserved` all true. These measurements apply
-to this local environment and configuration only; they are not a production
-capacity claim. A separate run with a lower rate limit may return expected
-`429` responses and should be reported as load-shedding behavior, not as this
-inventory stress scenario's passing result.
-
-## Scope boundaries
-
-- `userId` stands in for authenticated identity; production derives it from a verified session/JWT.
-- Payment, cancellation, reservation expiry, and inventory release are out of scope.
-- Local implementation has one active sale and one product.
-- Server/database time is authoritative; client time cannot decide eligibility.
-- Redis failure can affect configured rate-limit behavior, never database correctness.
-
-## Follow-up validation improvements
-
-The stress runner now requires exactly `min(requests, stock)` confirmed purchases,
-matching stored order counts, the expected remaining inventory, and only the
-expected confirmed/sold-out outcomes. Invalid or repeated order IDs, unexpected
-outcomes, and timed-out requests fail the run. Regression tests cover the former
-false-PASS case where every response was ended with untouched inventory.
-
-The 100,000-request result above predates these stricter assertions and has not
-been re-measured. The two follow-up runs below used the stricter runner.
-Run each scenario separately against a dedicated backend/database:
-
-```sh
-# More successful writes, then sold-out contention
 STRESS_REQUESTS=10000 STRESS_CONCURRENCY=50 STRESS_STOCK=5000 pnpm -C backend stress
-# Larger concurrent burst against scarce inventory
 STRESS_REQUESTS=10000 STRESS_CONCURRENCY=200 STRESS_STOCK=100 pnpm -C backend stress
 ```
 
-The following local results were reported from these workloads on October 13, 2026. Raise the dedicated backend
-rate limit as described above. `STRESS_DURATION_MS` defaults to 600000; choose a
-longer window for slower workloads. This closed-loop runner bounds in-flight
-requests; it does not establish capacity under a fixed external arrival rate.
+Each run resets orders. Workers wait for the final WebSocket result; 202 responses
+are never counted as confirmed. The runner requires exactly min(requests, stock)
+confirmed results, the expected sold-out count, unique valid order IDs, matching
+persisted orders, non-negative/conserved stock, no failed/pending attempts and no
+unexpected errors. Latency includes admission through final WebSocket result;
+admission mean is also reported. It is a closed-loop local load test, not a fixed
+arrival-rate or production capacity claim.
 
-Database connection acquisition and lock waits are bounded at 2 seconds,
-statements at 5 seconds, and idle transactions at 10 seconds. Selected transient
-database failures return 503 with Retry-After; retry an uncertain purchase using
-the original idempotency key. These bounds protect latency but are not a global
-admission-control mechanism. A hot product still serializes on its sale row;
-additional replicas alone cannot remove that bottleneck.
+Historical synchronous results are in [the baseline document](docs/SYNCHRONOUS-BASELINE.md).
+They must not be presented as measurements of this asynchronous version.
 
-The browser countdown uses a database time anchor and monotonic elapsed time,
-so a skewed device clock cannot disable a currently active sale. Purchase
-eligibility is checked using fresh database time after acquiring the sale lock.
-Browser time is approximate; the purchase API remains authoritative.
+## Scope
 
-### Follow-up local stress results (October 13, 2026)
+Real authentication, payments, cancellation, reservation expiry, CDN/WAF
+provisioning and multiple-product partitioning are outside this local demo.
+For production, derive identity from a verified session, implement a gateway and
+edge policies, and evaluate a managed broker if contention or operational needs
+justify it. The current single-product worker remains serial by design.
 
-Both scenarios used the stricter assertions and an elevated purchase rate limit.
-Results below were run locally by the repository author; they are not a
-production capacity guarantee. Each scenario reset inventory independently.
+### Recorded async local runs
 
-| Requests | Concurrency | Stock | Confirmed | Sold out | Unexpected errors | Elapsed | Throughput | p50 / p95 / p99 latency | Result |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| 10,000 | 50 | 5,000 | 5,000 | 5,000 | 0 | 28.059 s | 356.4 req/s | 146.2 / 193.4 / 269.1 ms | PASS |
-| 10,000 | 200 | 100 | 100 | 9,900 | 0 | 21.756 s | 459.6 req/s | 418.6 / 502.1 / 620.4 ms | PASS |
+Measured on October 13, 2026 against a dedicated PostgreSQL/Redis Docker setup,
+with API and embedded worker on the same machine and rate limit raised to 120000.
+Raw JSON is retained in [docs/stress-results](docs/stress-results).
 
-Both runs ended with zero remaining stock, exactly the expected persisted order
-count, no duplicate confirmed users, and all four inventory invariants true.
-The first run exercises 5,000 successful writes; the second exercises higher
-concurrent contention with scarce stock. Different stock/workload mixes mean
-these runs do not isolate the effect of concurrency on throughput.
+| Requests | Concurrency | Stock | Confirmed / sold out | Errors | Completion req/s | Mean admission ms | Final p50 / p95 / p99 ms | Result |
+| ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- |
+| 10,000 | 50 | 5,000 | 5,000 / 5,000 | 0 | 105.1 | 11.5 | 452.3 / 625.7 / 751.4 | PASS |
+| 10,000 | 200 | 100 | 100 / 9,900 | 0 | 106.9 | 19.8 | 1803.4 / 2280.6 / 2639.7 | PASS |
+
+Both finished with zero stock, no duplicate confirmed users, no pending/failed
+attempts and all inventory invariants true. Durable admission, separate worker
+processing and WebSocket delivery add overhead; completion throughput is lower
+than the historical synchronous baseline. Lower admission latency must not be
+misrepresented as final confirmation latency or unlimited queue capacity.

@@ -1,24 +1,10 @@
-flowchart LR
-  Client["React demo client"]
-
-  subgraph Local["Local implementation"]
-    API["Fastify API"]
-    Redis[("Redis 7 rate-limit store")]
-    Postgres[("PostgreSQL 16: sales and orders")]
-    API -->|purchase rate limit| Redis
-    API -->|sale and purchase requests| Postgres
-  end
-
-  Client -->|local| API
-  Postgres -->|transaction lock and constraints| Inventory["Inventory correctness"]
-
-  subgraph Production["Production scale evolution: not implemented locally"]
-    Edge["CDN, WAF, edge rate limiting"]
-    Replicas["Stateless API replicas"]
-    Queue["Durable FIFO queue per product"]
-    Worker["Reservation worker"]
-    ProductionDB[("Orders and inventory database")]
-    Edge --> Replicas --> Queue --> Worker --> ProductionDB
-  end
-
-  Client -->|future production path| Edge
+flowchart TD
+  Client[React Client] --> API[Purchase API / 202 Processing]
+  API --> Redis[(Redis Rate Limiter)]
+  API --> Queue[(Durable PostgreSQL FIFO Attempts)]
+  Queue --> Worker[Single Logical Inventory + Order Worker]
+  Worker --> DB[(One Transaction: Inventory + Orders)]
+  Worker --> Events[(Durable Order Status Event)]
+  Events -->|post-commit NOTIFY| WS[WebSocket API]
+  WS -->|snapshot + final result| Client
+  Edge[Production CDN / WAF / Gateway / Auth] -.-> API

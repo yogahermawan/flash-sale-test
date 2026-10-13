@@ -1,0 +1,39 @@
+{
+  "configuration": {
+    "baseUrl": "http://localhost:3201",
+    "requestCount": 10000,
+    "concurrency": 200,
+    "stock": 100,
+    "userPrefix": "stress",
+    "durationMs": 600000
+  },
+  "elapsedMs": 93507.6,
+  "requestsPerSecond": 106.9,
+  "outcomes": {
+    "confirmed": 100,
+    "sold_out": 9900
+  },
+  "unexpectedErrors": 0,
+  "admissionLatencyMeanMs": 19.8,
+  "latencyDefinition": "POST admission through final WebSocket result",
+  "latencyMs": {
+    "p50": 1803.4,
+    "p95": 2280.6,
+    "p99": 2639.7
+  },
+  "metrics": {
+    "pendingAttemptCount": 0,
+    "failedAttemptCount": 0,
+    "initialStock": 100,
+    "stockRemaining": 0,
+    "confirmedOrderCount": 100,
+    "duplicateUserCount": 0,
+    "invariants": {
+      "stockNonNegative": true,
+      "noOversell": true,
+      "uniqueConfirmedUsers": true,
+      "stockConserved": true
+    }
+  },
+  "pass": true
+}
