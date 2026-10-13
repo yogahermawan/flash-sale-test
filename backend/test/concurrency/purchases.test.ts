@@ -3,11 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { buildTestApp } from '../helpers/app.js';
-import { ensureTestSchema, hasTestDatabase, resetTestSale, testPool } from '../helpers/database.js';
+import { ensureTestSchema, resetTestSale, testPool } from '../helpers/database.js';
 
-const describeDatabase = describe.skipIf(!hasTestDatabase);
-
-describeDatabase('concurrent purchases', () => {
+describe('concurrent purchases', () => {
   let db: Pool;
   let app: FastifyInstance;
 
@@ -47,4 +45,17 @@ describeDatabase('concurrent purchases', () => {
     const metrics = await app.inject({ method: 'GET', url: '/api/internal/metrics', headers: { 'x-internal-api-key': 'test-internal-key' } });
     expect(metrics.json()).toMatchObject({ stockRemaining: 4, confirmedOrderCount: 1 });
   });
+  it('creates one order for concurrent same-user attempts with different keys', async () => {
+    await resetTestSale(db, { initialStock: 5 });
+    const responses = await Promise.all(Array.from({ length: 20 }, () => app.inject({
+      method: 'POST', url: '/api/purchases', headers: { 'idempotency-key': randomUUID() }, payload: { userId: 'same-user@example.com' },
+    })));
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    expect(responses.filter((response) => response.json().outcome === 'confirmed')).toHaveLength(1);
+    expect(responses.filter((response) => response.json().outcome === 'already_purchased')).toHaveLength(19);
+    expect(new Set(responses.map((response) => response.json().orderId)).size).toBe(1);
+    const count = await db.query('SELECT count(*)::int AS count FROM orders');
+    expect(count.rows[0].count).toBe(1);
+  });
+
 });

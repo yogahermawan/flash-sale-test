@@ -56,4 +56,16 @@ test.describe('flash sale development page', () => {
     await expect(page.getByText('Drop closed', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sale ended' })).toBeDisabled();
   });
+  test('uses server eligibility when the device clock is one day ahead', async ({ page }) => {
+    await page.addInitScript(() => {
+      const realNow = Date.now.bind(Date);
+      Date.now = () => realNow() + 86_400_000;
+    });
+    await page.goto('/');
+    await expect(page.getByText('Live now', { exact: true })).toBeVisible();
+    await page.getByLabel('Your user ID').fill('clock-skew@example.com');
+    await page.getByRole('button', { name: 'Buy now' }).click();
+    await expect(page.getByRole('heading', { name: 'You’re in.' })).toBeVisible();
+  });
+
 });

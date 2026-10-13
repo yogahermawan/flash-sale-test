@@ -1,3 +1,4 @@
+import '../../src/config.js';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,7 @@ import { resetSale, type ResetSaleInput } from '../../src/services/sale-service.
 
 const testUrl = process.env.TEST_DATABASE_URL;
 
-export const hasTestDatabase = Boolean(testUrl);
+if (!testUrl) throw new Error('TEST_DATABASE_URL is required for integration tests; configure root .env or export it.');
 
 export function testPool() {
   if (!testUrl) throw new Error('TEST_DATABASE_URL is required for database integration tests.');

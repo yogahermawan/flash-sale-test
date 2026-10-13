@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { stressPasses } from './stress-validation.js';
+import type { SaleMetrics } from '../src/services/metrics-service.js';
 import { loadConfig } from '../src/config.js';
 
 const config = loadConfig();
@@ -12,19 +14,23 @@ if (![requestCount, concurrency, stock].every((value) => Number.isSafeInteger(va
   throw new Error('STRESS_REQUESTS, STRESS_CONCURRENCY, and STRESS_STOCK must be positive integers.');
 }
 
+const durationMs = Number(process.env.STRESS_DURATION_MS ?? 600_000);
+if (!Number.isSafeInteger(durationMs) || durationMs <= 0) throw new Error('STRESS_DURATION_MS must be positive.');
 const now = Date.now();
 const resetResponse = await fetch(`${baseUrl}/api/internal/sales/reset`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'x-internal-api-key': config.internalApiKey },
+  signal: AbortSignal.timeout(10_000),
   body: JSON.stringify({
     initialStock: stock,
     startsAt: new Date(now - 60_000).toISOString(),
-    endsAt: new Date(now + 10 * 60_000).toISOString(),
+    endsAt: new Date(now + durationMs).toISOString(),
     productName: 'Stress-test headphones',
   }),
 });
 if (!resetResponse.ok) throw new Error(`Sale reset failed: ${resetResponse.status} ${await resetResponse.text()}`);
 
+const confirmedOrderIds = new Set<string>();
 const outcomes = new Map<string, number>();
 const latencies: number[] = [];
 let unexpectedErrors = 0;
@@ -41,9 +47,14 @@ async function worker(): Promise<void> {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
         body: JSON.stringify({ userId: `${userPrefix}-${index}@example.com` }),
+        signal: AbortSignal.timeout(10_000),
       });
-      const body = await response.json().catch(() => ({})) as { outcome?: string };
-      if (!response.ok) unexpectedErrors += 1;
+      const body = await response.json().catch(() => ({})) as { outcome?: string; orderId?: string };
+      if (!response.ok || !['confirmed', 'sold_out'].includes(body.outcome ?? '')) unexpectedErrors += 1;
+      if (body.outcome === 'confirmed') {
+        if (typeof body.orderId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.orderId) || confirmedOrderIds.has(body.orderId)) unexpectedErrors += 1;
+        else confirmedOrderIds.add(body.orderId);
+      }
       const label = body.outcome ?? `http_${response.status}`;
       outcomes.set(label, (outcomes.get(label) ?? 0) + 1);
     } catch {
@@ -57,21 +68,16 @@ async function worker(): Promise<void> {
 
 await Promise.all(Array.from({ length: Math.min(concurrency, requestCount) }, worker));
 const elapsedMs = performance.now() - startedAt;
-const metricsResponse = await fetch(`${baseUrl}/api/internal/metrics`, { headers: { 'x-internal-api-key': config.internalApiKey } });
+const metricsResponse = await fetch(`${baseUrl}/api/internal/metrics`, { headers: { 'x-internal-api-key': config.internalApiKey }, signal: AbortSignal.timeout(10_000) });
 if (!metricsResponse.ok) throw new Error(`Metrics fetch failed: ${metricsResponse.status} ${await metricsResponse.text()}`);
-const metrics = await metricsResponse.json();
+const metrics = await metricsResponse.json() as SaleMetrics;
 const sortedLatencies = latencies.sort((a, b) => a - b);
 const percentile = (ratio: number) => sortedLatencies[Math.min(sortedLatencies.length - 1, Math.ceil(sortedLatencies.length * ratio) - 1)].toFixed(1);
 const confirmed = outcomes.get('confirmed') ?? 0;
-const passes = unexpectedErrors === 0
-  && confirmed <= stock
-  && metrics.invariants.stockNonNegative
-  && metrics.invariants.noOversell
-  && metrics.invariants.uniqueConfirmedUsers
-  && metrics.invariants.stockConserved;
+const passes = stressPasses(requestCount, stock, outcomes, unexpectedErrors, metrics);
 
 console.log(JSON.stringify({
-  configuration: { baseUrl, requestCount, concurrency, stock, userPrefix },
+  configuration: { baseUrl, requestCount, concurrency, stock, userPrefix, durationMs },
   elapsedMs: Number(elapsedMs.toFixed(1)),
   requestsPerSecond: Number((requestCount / (elapsedMs / 1000)).toFixed(1)),
   outcomes: Object.fromEntries(outcomes),

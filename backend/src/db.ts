@@ -1,7 +1,7 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 
 export function createPool(connectionString: string): Pool {
-  return new Pool({ connectionString, max: 20 });
+  return new Pool({ connectionString, max: 20, connectionTimeoutMillis: 2_000, statement_timeout: 5_000, lock_timeout: 2_000, idle_in_transaction_session_timeout: 10_000 });
 }
 
 export async function inTransaction<T>(pool: Pool, operation: (client: PoolClient) => Promise<T>): Promise<T> {

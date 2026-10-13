@@ -17,21 +17,22 @@ function userIdIsValid(value: string): boolean {
 }
 
 export default function App() {
-  const { sale, loading, error: saleError, refresh } = useSale();
+  const { sale, clockAnchor, loading, error: saleError, refresh } = useSale();
   const purchase = usePurchase();
   const [userId, setUserId] = useState('');
   const [lookupPending, setLookupPending] = useState(false);
   const [lookupResult, setLookupResult] = useState<PurchaseResponse>();
   const [lookupError, setLookupError] = useState<ApiError>();
   const [lookupMessage, setLookupMessage] = useState('');
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => performance.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    const timer = window.setInterval(() => setNow(performance.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const status = useMemo(() => sale ? currentStatus(sale.startsAt, sale.endsAt, now) : undefined, [sale, now]);
+  const serverNow = clockAnchor ? clockAnchor.serverMs + Math.max(0, now - clockAnchor.receivedAt) : 0;
+  const status = useMemo(() => sale && clockAnchor ? currentStatus(sale.startsAt, sale.endsAt, serverNow) : undefined, [sale, clockAnchor, serverNow]);
   const canBuy = Boolean(sale && status === 'active' && sale.stockRemaining > 0 && userIdIsValid(userId) && !purchase.pending && !lookupPending);
   const canLookup = userIdIsValid(userId) && !purchase.pending && !lookupPending;
 
@@ -73,7 +74,7 @@ export default function App() {
   return <main className="page">
     <nav className="topbar" aria-label="Booki Marketplace"><a className="brand" href="/"><span className="brand-mark">B</span><span className="brand-name">Booki</span><span className="brand-divider" />Marketplace</a><button className="refresh" type="button" onClick={() => void refresh()} disabled={loading}><span aria-hidden="true">↻</span> Refresh stock</button></nav>
     <div className="page-heading"><span>Limited-time event</span><span className="heading-dot" aria-hidden="true" /> Sale status &amp; stock</div>
-    <SaleCard sale={sale} status={status} now={now} />
+    <SaleCard sale={sale} status={status} now={serverNow} />
     <section className="checkout" aria-labelledby="checkout-title">
       <div className="checkout-intro"><div className="checkout-icon" aria-hidden="true">↗</div><p className="eyebrow">Quick checkout</p><h2 id="checkout-title">Make it yours.</h2><p>Enter your user ID to secure one item. Your order is confirmed as soon as the sale service accepts it.</p></div>
       <form onSubmit={submit} noValidate>

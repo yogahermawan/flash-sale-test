@@ -43,7 +43,7 @@ The local service locks the active sale row with `SELECT ... FOR UPDATE`, checks
 
 ## Local setup
 
-Prerequisites: Node.js 20+, pnpm 9+, and Docker Compose (or Colima on macOS).
+Prerequisites: Node.js 20+, pnpm 11.18.0 (as pinned in package.json), and Docker Compose (or Colima on macOS).
 
 ```sh
 pnpm install
@@ -97,11 +97,13 @@ No active sale exists after migration by design. Open `http://localhost:3000/doc
 ```json
 {
   "initialStock": 100,
-  "startsAt": "2026-10-10T00:00:00.000Z",
-  "endsAt": "2026-10-11T00:00:00.000Z",
+  "startsAt": "2026-10-13T00:00:00.000Z",
+  "endsAt": "2026-10-14T23:59:59.000Z",
   "productName": "Limited Edition Bookipi Headphones"
 }
 ```
+
+Adjust the example window to include the current time.
 
 Internal endpoints are absent in production and intentionally return `404` when their key is missing or incorrect in development.
 
@@ -141,7 +143,9 @@ pnpm build
 pnpm typecheck
 ```
 
-Integration tests only run with `TEST_DATABASE_URL` and refuse URLs that do not include `flash_sale_test`. Coverage includes sale-window boundaries, validation, public outcomes, idempotency retries, one-user enforcement, internal-route protection, and concurrent reservations.
+Integration tests load root `.env` and fail if `TEST_DATABASE_URL` is missing; the unit command runs only unit tests. Integration tests run with `TEST_DATABASE_URL` and refuse URLs that do not include `flash_sale_test`. Coverage includes sale-window boundaries, validation, public outcomes, idempotency retries, one-user enforcement, internal-route protection, and concurrent reservations.
+
+The Playwright suite loads root `.env`, using `E2E_DATABASE_URL` when set or otherwise `TEST_DATABASE_URL`. It requires a dedicated `flash_sale_test` database and uses `REDIS_URL` from the same configuration.
 
 The Playwright suite starts isolated Fastify (`:3100`) and Vite (`:5174`) processes against `flash_sale_test`. It verifies the visible development page for an active purchase, order lookup after refresh, sold-out inventory, and ended-sale behavior. It does not use the demo backend at `:3000`.
 
@@ -192,3 +196,56 @@ inventory stress scenario's passing result.
 - Local implementation has one active sale and one product.
 - Server/database time is authoritative; client time cannot decide eligibility.
 - Redis failure can affect configured rate-limit behavior, never database correctness.
+
+## Follow-up validation improvements
+
+The stress runner now requires exactly `min(requests, stock)` confirmed purchases,
+matching stored order counts, the expected remaining inventory, and only the
+expected confirmed/sold-out outcomes. Invalid or repeated order IDs, unexpected
+outcomes, and timed-out requests fail the run. Regression tests cover the former
+false-PASS case where every response was ended with untouched inventory.
+
+The 100,000-request result above predates these stricter assertions and has not
+been re-measured. The two follow-up runs below used the stricter runner.
+Run each scenario separately against a dedicated backend/database:
+
+```sh
+# More successful writes, then sold-out contention
+STRESS_REQUESTS=10000 STRESS_CONCURRENCY=50 STRESS_STOCK=5000 pnpm -C backend stress
+# Larger concurrent burst against scarce inventory
+STRESS_REQUESTS=10000 STRESS_CONCURRENCY=200 STRESS_STOCK=100 pnpm -C backend stress
+```
+
+The following local results were reported from these workloads on October 13, 2026. Raise the dedicated backend
+rate limit as described above. `STRESS_DURATION_MS` defaults to 600000; choose a
+longer window for slower workloads. This closed-loop runner bounds in-flight
+requests; it does not establish capacity under a fixed external arrival rate.
+
+Database connection acquisition and lock waits are bounded at 2 seconds,
+statements at 5 seconds, and idle transactions at 10 seconds. Selected transient
+database failures return 503 with Retry-After; retry an uncertain purchase using
+the original idempotency key. These bounds protect latency but are not a global
+admission-control mechanism. A hot product still serializes on its sale row;
+additional replicas alone cannot remove that bottleneck.
+
+The browser countdown uses a database time anchor and monotonic elapsed time,
+so a skewed device clock cannot disable a currently active sale. Purchase
+eligibility is checked using fresh database time after acquiring the sale lock.
+Browser time is approximate; the purchase API remains authoritative.
+
+### Follow-up local stress results (October 13, 2026)
+
+Both scenarios used the stricter assertions and an elevated purchase rate limit.
+Results below were run locally by the repository author; they are not a
+production capacity guarantee. Each scenario reset inventory independently.
+
+| Requests | Concurrency | Stock | Confirmed | Sold out | Unexpected errors | Elapsed | Throughput | p50 / p95 / p99 latency | Result |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 10,000 | 50 | 5,000 | 5,000 | 5,000 | 0 | 28.059 s | 356.4 req/s | 146.2 / 193.4 / 269.1 ms | PASS |
+| 10,000 | 200 | 100 | 100 | 9,900 | 0 | 21.756 s | 459.6 req/s | 418.6 / 502.1 / 620.4 ms | PASS |
+
+Both runs ended with zero remaining stock, exactly the expected persisted order
+count, no duplicate confirmed users, and all four inventory invariants true.
+The first run exercises 5,000 successful writes; the second exercises higher
+concurrent contention with scarce stock. Different stock/workload mixes mean
+these runs do not isolate the effect of concurrency on throughput.

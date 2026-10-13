@@ -22,7 +22,9 @@ export async function purchase(pool: Pool, userId: string, idempotencyKey: strin
       return { outcome: 'confirmed', orderId: byKey.rows[0].id };
     }
 
-    const saleStatus = statusForSale(sale, sale.server_now ?? new Date());
+    // Sample time after acquiring the row lock: waiting may cross the sale deadline.
+    const clock = await client.query<{ now: Date }>('SELECT clock_timestamp() AS now');
+    const saleStatus = statusForSale(sale, clock.rows[0].now);
     if (saleStatus === 'upcoming') return { outcome: 'upcoming' };
     if (saleStatus === 'ended') return { outcome: 'ended' };
 

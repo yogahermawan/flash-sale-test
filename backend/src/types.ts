@@ -17,6 +17,7 @@ export interface PublicSale {
   name: string;
   status: SaleStatus;
   stockRemaining: number;
+  serverNow: string;
   startsAt: string;
   endsAt: string;
 }

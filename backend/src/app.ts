@@ -55,6 +55,12 @@ export async function buildApp({ config, db, redis }: BuildAppDependencies): Pro
     if (fastifyError.statusCode === 429) {
       return reply.status(429).send({ code: 'RATE_LIMITED', message: 'Too many purchase attempts.' });
     }
+    const databaseError = error as { code?: string; message?: string };
+    if (['55P03', '57014', '53300', '57P01', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].includes(databaseError.code ?? '')
+      || databaseError.message?.includes('timeout exceeded when trying to connect')) {
+      request.log.error(error);
+      return reply.header('Retry-After', '1').status(503).send({ code: 'PURCHASE_UNAVAILABLE', message: 'Purchase service is temporarily unavailable. Retry with the same Idempotency-Key.' });
+    }
     request.log.error(error);
     return reply.status(500).send({ code: 'PURCHASE_UNAVAILABLE', message: 'Purchase service is temporarily unavailable.' });
   });

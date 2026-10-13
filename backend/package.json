@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
-    "test": "vitest run",
+    "test": "vitest run test/unit",
     "test:integration": "vitest run test/integration test/concurrency",
     "stress": "tsx scripts/stress.ts",
     "test:watch": "vitest"

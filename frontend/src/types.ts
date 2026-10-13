@@ -6,6 +6,7 @@ export interface Sale {
   name: string;
   status: SaleStatus;
   stockRemaining: number;
+  serverNow: string;
   startsAt: string;
   endsAt: string;
 }

@@ -1,9 +1,13 @@
+import './backend/src/config';
 import { defineConfig } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(__dirname);
-const databaseUrl = process.env.E2E_DATABASE_URL ?? 'postgres://flash_sale:flash_sale@localhost:5433/flash_sale_test';
+const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.TEST_DATABASE_URL;
+if (!databaseUrl || !new URL(databaseUrl).pathname.slice(1).includes('flash_sale_test')) {
+  throw new Error('E2E_DATABASE_URL or TEST_DATABASE_URL must target a dedicated flash_sale_test database; configure root .env.');
+}
 const apiPort = '3100';
 const braveExecutable = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH

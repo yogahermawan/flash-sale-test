@@ -3,6 +3,7 @@ import { ApiError, getSale } from '../api';
 import type { Sale } from '../types';
 
 export function useSale() {
+  const [clockAnchor, setClockAnchor] = useState<{ serverMs: number; receivedAt: number }>();
   const [sale, setSale] = useState<Sale>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError>();
@@ -10,7 +11,9 @@ export function useSale() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setSale(await getSale());
+      const nextSale = await getSale();
+      setClockAnchor({ serverMs: Date.parse(nextSale.serverNow), receivedAt: performance.now() });
+      setSale(nextSale);
       setError(undefined);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught : new ApiError('REQUEST_FAILED', 'Unable to load the sale.', 0));
@@ -20,5 +23,5 @@ export function useSale() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  return { sale, loading, error, refresh };
+  return { sale, clockAnchor, loading, error, refresh };
 }

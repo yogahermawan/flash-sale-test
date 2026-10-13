@@ -8,12 +8,13 @@ export const errorSchema = {
 export const saleSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['id', 'name', 'status', 'stockRemaining', 'startsAt', 'endsAt'],
+  required: ['id', 'name', 'status', 'stockRemaining', 'startsAt', 'endsAt', 'serverNow'],
   properties: {
     id: { type: 'string', format: 'uuid' },
     name: { type: 'string' },
     status: { type: 'string', enum: ['upcoming', 'active', 'ended'] },
     stockRemaining: { type: 'integer', minimum: 0 },
+    serverNow: { type: 'string', format: 'date-time' },
     startsAt: { type: 'string', format: 'date-time' },
     endsAt: { type: 'string', format: 'date-time' },
   },

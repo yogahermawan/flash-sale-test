@@ -39,5 +39,6 @@ jobs:
       - run: PGPASSWORD=flash_sale psql -h localhost -U flash_sale -d postgres -c 'CREATE DATABASE flash_sale_test;'
       - run: pnpm typecheck && pnpm build
       - run: pnpm -C backend test
+      - run: pnpm -C backend test:integration
       - run: pnpm -C frontend exec playwright install --with-deps chromium
       - run: pnpm -C frontend test:e2e

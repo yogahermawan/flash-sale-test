@@ -3,12 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { buildTestApp, testConfig } from '../helpers/app.js';
-import { ensureTestSchema, hasTestDatabase, resetTestSale, testPool } from '../helpers/database.js';
+import { ensureTestSchema, resetTestSale, testPool } from '../helpers/database.js';
 import { buildApp } from '../../src/app.js';
 
-const describeDatabase = describe.skipIf(!hasTestDatabase);
-
-describeDatabase('purchase API integration', () => {
+describe('purchase API integration', () => {
   let db: Pool;
   let app: FastifyInstance;
 

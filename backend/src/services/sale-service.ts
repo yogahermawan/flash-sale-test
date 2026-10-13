@@ -20,6 +20,7 @@ export function toPublicSale(sale: SaleRow): PublicSale {
     name: sale.product_name,
     status: statusForSale(sale, sale.server_now ?? new Date()),
     stockRemaining: sale.stock_remaining,
+    serverNow: (sale.server_now ?? new Date()).toISOString(),
     startsAt: sale.starts_at.toISOString(),
     endsAt: sale.ends_at.toISOString(),
   };
