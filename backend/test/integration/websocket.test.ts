@@ -99,3 +99,68 @@ it('rejects another demo user before WebSocket upgrade', async () => {
   });
   expect(code).toBe(404);
 });
+it('broadcasts committed stock to all sale subscribers and replays after reconnect/reset', async () => {
+  const sale = await resetTestSale(db, { initialStock: 2 });
+  const first = open('/api/sale/events');
+  const second = open('/api/sale/events');
+  async function stock(
+    stream: ReturnType<typeof open>,
+    expected: number,
+    id = sale.id,
+  ) {
+    for (let i = 0; i < 10; i++) {
+      const message = await stream.next();
+      if (message.sale.id === id && message.sale.stockRemaining === expected)
+        return message;
+    }
+    throw new Error('Expected sale snapshot not received');
+  }
+  try {
+    await stock(first, 2);
+    await stock(second, 2);
+    await app.inject({
+      method: 'POST',
+      url: '/api/purchases',
+      headers: { 'idempotency-key': randomUUID() },
+      payload: { userId: 'live-stock' },
+    });
+    // Admission alone must not decrement inventory.
+    expect(
+      (
+        await db.query('SELECT stock_remaining FROM flash_sales WHERE id=$1', [
+          sale.id,
+        ])
+      ).rows[0].stock_remaining,
+    ).toBe(2);
+    await expect(
+      processNext(db, async () => {
+        throw new Error('Simulated rollback');
+      }),
+    ).rejects.toThrow('Simulated rollback');
+    expect(
+      (
+        await db.query('SELECT stock_remaining FROM flash_sales WHERE id=$1', [
+          sale.id,
+        ])
+      ).rows[0].stock_remaining,
+    ).toBe(2);
+    await db.query(
+      'UPDATE purchase_attempts SET retry_after=clock_timestamp()',
+    );
+    await processNext(db);
+    await stock(first, 1);
+    await stock(second, 1);
+    const replay = open('/api/sale/events');
+    try {
+      await stock(replay, 1);
+    } finally {
+      replay.socket.close();
+    }
+    const reset = await resetTestSale(db, { initialStock: 3 });
+    await stock(first, 3, reset.id);
+    await stock(second, 3, reset.id);
+  } finally {
+    first.socket.close();
+    second.socket.close();
+  }
+});

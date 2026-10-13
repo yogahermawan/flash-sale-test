@@ -70,6 +70,7 @@ remains pending while the worker is stopped and resumes when it restarts.
 
 | Method | Endpoint | Behaviour |
 | --- | --- | --- |
+| WS | /api/sale/events | Initial sale snapshot and committed stock/reset updates for every browser |
 | GET | /api/sale | Status, window, stock and authoritative server time |
 | POST | /api/purchases | UUID Idempotency-Key + userId; eligible attempt returns 202 Processing + attemptId |
 | GET | /api/purchases/:attemptId | Persisted status; demo userId query required |
@@ -110,7 +111,7 @@ rows; registration precedes snapshot reads and reconnect replays persisted state
 The notification listener also reconnects and refreshes subscribers after loss.
 The browser reconnects with backoff; after 30 seconds it stops waiting and offers
 a retry to resume the same attempt. Timeout does not cancel a purchase. Lookup
-can restore a pending attempt after refresh. Heartbeats clean up dead sockets.
+can restore a pending attempt after refresh. Heartbeats clean up dead sockets. All pages also subscribe to public sale snapshots over WebSocket. Stock updates are signalled only after successful commit (including demo resets); admission and rolled-back purchases do not reduce displayed stock. Reconnect reads current database state. Each API process coalesces notifications into shared snapshot reads rather than querying once per browser.
 
 The pending backlog is capped at 10,000; full admission returns 503. DB waits are
 bounded: acquisition/lock 2s, statement 5s, idle transaction 10s. Selected transient

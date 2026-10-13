@@ -60,6 +60,10 @@ export async function processNext(
         [attempt.id, status],
       );
       await client.query("SELECT pg_notify('order_status',$1)", [attempt.id]);
+      if (status === 'confirmed')
+        await client.query("SELECT pg_notify('sale_status',$1)", [
+          attempt.sale_id,
+        ]);
       if (beforeCommit) await beforeCommit(client);
       return true;
     });

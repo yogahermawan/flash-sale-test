@@ -69,5 +69,6 @@ export async function resetSale(
      RETURNING id, product_name, starts_at, ends_at, initial_stock, stock_remaining, active, clock_timestamp() AS server_now`,
     [input.productName, input.startsAt, input.endsAt, input.initialStock],
   );
+  await client.query("SELECT pg_notify('sale_status',$1)", [result.rows[0].id]);
   return toPublicSale(result.rows[0]);
 }

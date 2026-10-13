@@ -231,7 +231,7 @@ export default function App() {
       )}
       <footer>
         <span>
-          <i aria-hidden="true">✓</i> Stock refreshes after purchase
+          <i aria-hidden="true">✓</i> Stock updates live
         </span>
         <span>
           <i aria-hidden="true">✓</i> One per demo user

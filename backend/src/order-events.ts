@@ -1,11 +1,15 @@
 import type { Pool, PoolClient } from 'pg';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { getPublicSale } from './services/sale-service.js';
 import { AppError } from './errors.js';
 import { findAttempt, publicAttempt } from './services/attempt-service.js';
 
 export class OrderEvents {
   private listeners = new Map<string, Set<() => void>>();
+  private saleSockets = new Set<WebSocket>();
+  private saleRefreshing = false;
+  private saleDirty = false;
   private client?: PoolClient;
   private closed = false;
   private reconnect?: ReturnType<typeof setTimeout>;
@@ -22,6 +26,7 @@ export class OrderEvents {
     }
     this.client = client;
     client.on('notification', (event) => {
+      if (event.channel === 'sale_status') this.refreshSale();
       if (event.channel === 'order_status' && event.payload)
         for (const fn of this.listeners.get(event.payload) ?? []) fn();
     });
@@ -32,6 +37,8 @@ export class OrderEvents {
     client.on('end', () => this.recover(client));
     try {
       await client.query('LISTEN order_status');
+      await client.query('LISTEN sale_status');
+      this.refreshSale();
       // A reconnect may have missed notifications; replay durable state.
       for (const group of this.listeners.values()) for (const fn of group) fn();
     } catch (error) {
@@ -57,6 +64,50 @@ export class OrderEvents {
     );
   }
 
+  subscribeSale(socket: WebSocket) {
+    this.saleSockets.add(socket);
+    let alive = true;
+    socket.on('pong', () => {
+      alive = true;
+    });
+    const heartbeat = setInterval(() => {
+      if (!alive) return socket.terminate();
+      alive = false;
+      socket.ping();
+    }, 30_000);
+    heartbeat.unref();
+    socket.once('close', () => {
+      clearInterval(heartbeat);
+      this.saleSockets.delete(socket);
+    });
+    // Register before the initial read. Serialize/coalesce reads so an older
+    // snapshot cannot arrive after a newer one; one query serves all clients.
+    this.refreshSale();
+  }
+  private refreshSale() {
+    if (this.closed || !this.saleSockets.size) return;
+    this.saleDirty = true;
+    if (this.saleRefreshing) return;
+    this.saleRefreshing = true;
+    void (async () => {
+      try {
+        while (this.saleDirty && !this.closed && this.saleSockets.size) {
+          this.saleDirty = false;
+          const sale = await getPublicSale(this.db);
+          const message = JSON.stringify({ type: 'sale', sale });
+          for (const socket of this.saleSockets) {
+            if (socket.readyState === 1) socket.send(message);
+          }
+        }
+      } catch (error) {
+        this.app.log.error(error);
+        for (const socket of this.saleSockets)
+          socket.close(1013, 'Sale temporarily unavailable');
+      } finally {
+        this.saleRefreshing = false;
+      }
+    })();
+  }
   async subscribe(socket: WebSocket, id: string, userId: string) {
     let alive = true;
     socket.on('pong', () => {

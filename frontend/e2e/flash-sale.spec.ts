@@ -37,7 +37,9 @@ test.describe('flash sale development page', () => {
         response.url().endsWith('/api/purchases') &&
         response.request().method() === 'POST',
     );
-    const connected = page.waitForEvent('websocket');
+    const connected = page.waitForEvent('websocket', (socket) =>
+      socket.url().includes('/api/purchases/'),
+    );
     await page.getByRole('button', { name: 'Buy now' }).click();
     expect((await admitted).status()).toBe(202);
     expect((await connected).url()).toContain('/events?');
@@ -45,6 +47,39 @@ test.describe('flash sale development page', () => {
       page.getByRole('heading', { name: 'You’re in.' }),
     ).toBeVisible();
     await expect(page.locator('code')).toHaveText(/^[0-9a-f-]{36}$/);
+  });
+
+  test('updates stock in another browser and restores current stock after reconnect', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    await resetSale(request, { initialStock: 1 });
+    const observerContext = await browser.newContext();
+    const observer = await observerContext.newPage();
+    try {
+      await page.goto('/');
+      await observer.goto('http://127.0.0.1:5174/');
+      await expect(
+        observer.getByLabel('Available stock').locator('strong'),
+      ).toHaveText('1');
+      await page.getByLabel('Your user ID').fill('live-stock@example.com');
+      await page.getByRole('button', { name: 'Buy now' }).click();
+      await expect(
+        observer.getByLabel('Available stock').locator('strong'),
+      ).toHaveText('0');
+      await expect(
+        observer.getByRole('button', { name: 'Sold out' }),
+      ).toBeDisabled();
+      await observerContext.setOffline(true);
+      await resetSale(request, { initialStock: 4 });
+      await observerContext.setOffline(false);
+      await expect(
+        observer.getByLabel('Available stock').locator('strong'),
+      ).toHaveText('4');
+    } finally {
+      await observerContext.close();
+    }
   });
 
   test('restores an existing order through the development-page lookup', async ({
