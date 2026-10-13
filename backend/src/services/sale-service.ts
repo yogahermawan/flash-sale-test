@@ -8,7 +8,10 @@ const activeSaleQuery = `
   FROM flash_sales
   WHERE active = true`;
 
-export function statusForSale(sale: Pick<SaleRow, 'starts_at' | 'ends_at'>, now: Date): SaleStatus {
+export function statusForSale(
+  sale: Pick<SaleRow, 'starts_at' | 'ends_at'>,
+  now: Date,
+): SaleStatus {
   if (now < sale.starts_at) return 'upcoming';
   if (now >= sale.ends_at) return 'ended';
   return 'active';
@@ -26,8 +29,13 @@ export function toPublicSale(sale: SaleRow): PublicSale {
   };
 }
 
-export async function getExactlyOneActiveSale(executor: Pool | PoolClient, lock = false): Promise<SaleRow> {
-  const result = await executor.query<SaleRow>(`${activeSaleQuery}${lock ? ' FOR UPDATE' : ''}`);
+export async function getExactlyOneActiveSale(
+  executor: Pool | PoolClient,
+  lock = false,
+): Promise<SaleRow> {
+  const result = await executor.query<SaleRow>(
+    `${activeSaleQuery}${lock ? ' FOR UPDATE' : ''}`,
+  );
   if (result.rowCount !== 1) throw saleConfigurationError();
   return result.rows[0];
 }
@@ -43,8 +51,16 @@ export interface ResetSaleInput {
   productName: string;
 }
 
-export async function resetSale(client: PoolClient, input: ResetSaleInput): Promise<PublicSale> {
-  await client.query('LOCK TABLE flash_sales, orders IN ACCESS EXCLUSIVE MODE');
+export async function resetSale(
+  client: PoolClient,
+  input: ResetSaleInput,
+): Promise<PublicSale> {
+  await client.query('SELECT pg_advisory_xact_lock(817263)');
+  await client.query(
+    'LOCK TABLE flash_sales, orders, purchase_attempts, order_status_events IN ACCESS EXCLUSIVE MODE',
+  );
+  await client.query('DELETE FROM order_status_events');
+  await client.query('DELETE FROM purchase_attempts');
   await client.query('DELETE FROM orders');
   await client.query('DELETE FROM flash_sales');
   const result = await client.query<SaleRow>(

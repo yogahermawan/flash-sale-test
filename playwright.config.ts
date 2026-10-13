@@ -4,14 +4,22 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(__dirname);
-const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.TEST_DATABASE_URL;
-if (!databaseUrl || !new URL(databaseUrl).pathname.slice(1).includes('flash_sale_test')) {
-  throw new Error('E2E_DATABASE_URL or TEST_DATABASE_URL must target a dedicated flash_sale_test database; configure root .env.');
+const databaseUrl =
+  process.env.E2E_DATABASE_URL ?? process.env.TEST_DATABASE_URL;
+if (
+  !databaseUrl ||
+  !new URL(databaseUrl).pathname.slice(1).includes('flash_sale_test')
+) {
+  throw new Error(
+    'E2E_DATABASE_URL or TEST_DATABASE_URL must target a dedicated flash_sale_test database; configure root .env.',
+  );
 }
 const apiPort = '3100';
-const braveExecutable = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
-const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH
-  ?? (existsSync(braveExecutable) ? braveExecutable : undefined);
+const braveExecutable =
+  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
+const executablePath =
+  process.env.PLAYWRIGHT_EXECUTABLE_PATH ??
+  (existsSync(braveExecutable) ? braveExecutable : undefined);
 
 export default defineConfig({
   testDir: './frontend/e2e',
@@ -19,7 +27,10 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   expect: { timeout: 10_000 },
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],
+  ],
   use: {
     baseURL: 'http://127.0.0.1:5174',
     launchOptions: executablePath ? { executablePath } : undefined,
@@ -36,6 +47,7 @@ export default defineConfig({
       env: {
         ...process.env,
         NODE_ENV: 'test',
+        RUN_WORKER: 'true',
         PORT: apiPort,
         DATABASE_URL: databaseUrl,
         REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
