@@ -1,4 +1,4 @@
-# Flash Sale - asynchronous FIFO purchases with WebSocket results
+# Flash Sale - asynchronous FIFO purchases with WebSocket
 
 A React + Fastify + TypeScript assessment for one product, limited stock, a
 configurable sale window, and one confirmed item per demo user. Purchase
